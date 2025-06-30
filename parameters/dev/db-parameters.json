@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "ProjectName", 
+    "ParameterValue": "ndsm"
+  },
+  {
+    "ParameterKey": "DBInstanceType",
+    "ParameterValue": "db.t3.micro"
+  },
+  {
+    "ParameterKey": "DBName",
+    "ParameterValue": "appdb"
+  },
+  {
+    "ParameterKey": "DBUsername",
+    "ParameterValue": "dbadmin"
+  },
+  {
+    "ParameterKey": "AllocatedStorage",
+    "ParameterValue": "20"
+  },
+  {
+    "ParameterKey": "BackupRetentionPeriod",
+    "ParameterValue": "7"
+  }
+]

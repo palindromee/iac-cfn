@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "ProjectName", 
+    "ParameterValue": "ndsm"
+  },
+  {
+    "ParameterKey": "DBInstanceType",
+    "ParameterValue": "db.r5.large"
+  },
+  {
+    "ParameterKey": "DBName",
+    "ParameterValue": "appdb"
+  },
+  {
+    "ParameterKey": "DBUsername",
+    "ParameterValue": "dbadmin"
+  },
+  {
+    "ParameterKey": "AllocatedStorage",
+    "ParameterValue": "100"
+  },
+  {
+    "ParameterKey": "BackupRetentionPeriod",
+    "ParameterValue": "30"
+  }
+]

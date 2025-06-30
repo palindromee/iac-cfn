@@ -1,0 +1,323 @@
+name: Deploy to Staging Environment
+
+on:
+  workflow_call:
+    inputs: {}
+    secrets: {}
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-vpc:
+    name: Deploy VPC Layer
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      vpc-stack-name: ${{ steps.stack-names.outputs.vpc-stack-name }}
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials  
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: GitHubActions-staging
+
+      - name: Set Stack Names
+        id: stack-names
+        run: |
+          PROJECT_NAME=$(jq -r '.[] | select(.ParameterKey=="ProjectName") | .ParameterValue' parameters/staging/vpc-parameters.json)
+          ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="Environment") | .ParameterValue' parameters/staging/vpc-parameters.json)
+          VPC_STACK_NAME="${PROJECT_NAME}-${ENVIRONMENT}-vpc"
+          ALB_STACK_NAME="${PROJECT_NAME}-${ENVIRONMENT}-alb"
+          echo "vpc-stack-name=${VPC_STACK_NAME}" >> $GITHUB_OUTPUT
+          echo "alb-stack-name=${ALB_STACK_NAME}" >> $GITHUB_OUTPUT
+          
+      - name: Deploy VPC Layer
+        run: |
+          STACK_NAME=${{ steps.stack-names.outputs.vpc-stack-name }}
+          
+          if aws cloudformation describe-stacks --stack-name $STACK_NAME >/dev/null 2>&1; then
+            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text)
+            echo "Stack exists with status: $STACK_STATUS"
+            
+            case $STACK_STATUS in
+              CREATE_IN_PROGRESS|UPDATE_IN_PROGRESS|DELETE_IN_PROGRESS)
+                echo "Stack is in transitional state: $STACK_STATUS. Waiting for completion..."
+                aws cloudformation wait stack-create-complete --stack-name $STACK_NAME 2>/dev/null || \
+                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME 2>/dev/null || \
+                aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME 2>/dev/null || true
+                STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DELETED")
+                ;;
+            esac
+            
+            if [ "$STACK_STATUS" = "CREATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_COMPLETE" ]; then
+              echo "Attempting to update stack..."
+              aws cloudformation update-stack \
+                --stack-name $STACK_NAME \
+                --template-body file://templates/vpc.yaml \
+                --parameters file://parameters/staging/vpc-parameters.json \
+                --capabilities CAPABILITY_NAMED_IAM 2>/dev/null && {
+                  echo "Update initiated, waiting for completion..."
+                  aws cloudformation wait stack-update-complete --stack-name $STACK_NAME
+                  echo "Stack updated successfully"
+                } || {
+                  echo "No changes detected, stack is up to date"
+                }
+            else
+              echo "Stack in unexpected state: $STACK_STATUS. Creating new stack..."
+              aws cloudformation create-stack \
+                --stack-name $STACK_NAME \
+                --template-body file://templates/vpc.yaml \
+                --parameters file://parameters/staging/vpc-parameters.json \
+                --capabilities CAPABILITY_NAMED_IAM
+              aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+              echo "Stack created successfully"
+            fi
+          else
+            echo "Creating new stack..."
+            aws cloudformation create-stack \
+              --stack-name $STACK_NAME \
+              --template-body file://templates/vpc.yaml \
+              --parameters file://parameters/staging/vpc-parameters.json \
+              --capabilities CAPABILITY_NAMED_IAM
+            aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+            echo "Stack created successfully"
+          fi
+
+  deploy-alb:
+    name: Deploy ALB Layer
+    runs-on: ubuntu-latest
+    needs: deploy-vpc
+    environment: staging
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: GitHubActions-staging
+
+      - name: Set ALB Stack Name
+        id: alb-stack-names
+        run: |
+          PROJECT_NAME=$(jq -r '.[] | select(.ParameterKey=="ProjectName") | .ParameterValue' parameters/staging/alb-parameters.json)
+          ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="Environment") | .ParameterValue' parameters/staging/alb-parameters.json)
+          ALB_STACK_NAME="${PROJECT_NAME}-${ENVIRONMENT}-alb"
+          echo "alb-stack-name=${ALB_STACK_NAME}" >> $GITHUB_OUTPUT
+          
+      - name: Deploy ALB Layer
+        run: |
+          STACK_NAME=${{ steps.alb-stack-names.outputs.alb-stack-name }}
+          
+          if aws cloudformation describe-stacks --stack-name $STACK_NAME >/dev/null 2>&1; then
+            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text)
+            echo "Stack exists with status: $STACK_STATUS"
+            
+            case $STACK_STATUS in
+              CREATE_IN_PROGRESS|UPDATE_IN_PROGRESS|DELETE_IN_PROGRESS)
+                echo "Stack is in transitional state: $STACK_STATUS. Waiting for completion..."
+                aws cloudformation wait stack-create-complete --stack-name $STACK_NAME 2>/dev/null || \
+                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME 2>/dev/null || \
+                aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME 2>/dev/null || true
+                STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DELETED")
+                ;;
+            esac
+            
+            if [ "$STACK_STATUS" = "CREATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_COMPLETE" ]; then
+              echo "Attempting to update stack..."
+              aws cloudformation update-stack \
+                --stack-name $STACK_NAME \
+                --template-body file://templates/alb.yaml \
+                --parameters file://parameters/staging/alb-parameters.json \
+                --capabilities CAPABILITY_NAMED_IAM 2>/dev/null && {
+                  echo "Update initiated, waiting for completion..."
+                  aws cloudformation wait stack-update-complete --stack-name $STACK_NAME
+                  echo "Stack updated successfully"
+                } || {
+                  echo "No changes detected, stack is up to date"
+                }
+            else
+              echo "Stack in unexpected state: $STACK_STATUS. Creating new stack..."
+              aws cloudformation create-stack \
+                --stack-name $STACK_NAME \
+                --template-body file://templates/alb.yaml \
+                --parameters file://parameters/staging/alb-parameters.json \
+                --capabilities CAPABILITY_NAMED_IAM
+              aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+              echo "Stack created successfully"
+            fi
+          else
+            echo "Creating new stack..."
+            aws cloudformation create-stack \
+              --stack-name $STACK_NAME \
+              --template-body file://templates/alb.yaml \
+              --parameters file://parameters/staging/alb-parameters.json \
+              --capabilities CAPABILITY_NAMED_IAM
+            aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+            echo "Stack created successfully"
+          fi
+
+  deploy-app:
+    name: Deploy App Layer
+    runs-on: ubuntu-latest
+    needs: deploy-alb
+    environment: staging
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: GitHubActions-staging
+
+      - name: Set App Stack Name
+        id: app-stack-names
+        run: |
+          PROJECT_NAME=$(jq -r '.[] | select(.ParameterKey=="ProjectName") | .ParameterValue' parameters/staging/app-parameters.json)
+          ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="Environment") | .ParameterValue' parameters/staging/app-parameters.json)
+          APP_STACK_NAME="${PROJECT_NAME}-${ENVIRONMENT}-app"
+          echo "app-stack-name=${APP_STACK_NAME}" >> $GITHUB_OUTPUT
+          
+      - name: Deploy App Layer
+        run: |
+          STACK_NAME=${{ steps.app-stack-names.outputs.app-stack-name }}
+          
+          if aws cloudformation describe-stacks --stack-name $STACK_NAME >/dev/null 2>&1; then
+            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text)
+            echo "Stack exists with status: $STACK_STATUS"
+            
+            case $STACK_STATUS in
+              CREATE_IN_PROGRESS|UPDATE_IN_PROGRESS|DELETE_IN_PROGRESS)
+                echo "Stack is in transitional state: $STACK_STATUS. Waiting for completion..."
+                aws cloudformation wait stack-create-complete --stack-name $STACK_NAME 2>/dev/null || \
+                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME 2>/dev/null || \
+                aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME 2>/dev/null || true
+                STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DELETED")
+                ;;
+            esac
+            
+            if [ "$STACK_STATUS" = "CREATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_COMPLETE" ]; then
+              echo "Attempting to update stack..."
+              aws cloudformation update-stack \
+                --stack-name $STACK_NAME \
+                --template-body file://templates/app.yaml \
+                --parameters file://parameters/staging/app-parameters.json \
+                --capabilities CAPABILITY_NAMED_IAM 2>/dev/null && {
+                  echo "Update initiated, waiting for completion..."
+                  aws cloudformation wait stack-update-complete --stack-name $STACK_NAME
+                  echo "Stack updated successfully"
+                } || {
+                  echo "No changes detected, stack is up to date"
+                }
+            else
+              echo "Stack in unexpected state: $STACK_STATUS. Creating new stack..."
+              aws cloudformation create-stack \
+                --stack-name $STACK_NAME \
+                --template-body file://templates/app.yaml \
+                --parameters file://parameters/staging/app-parameters.json \
+                --capabilities CAPABILITY_NAMED_IAM
+              aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+              echo "Stack created successfully"
+            fi
+          else
+            echo "Creating new stack..."
+            aws cloudformation create-stack \
+              --stack-name $STACK_NAME \
+              --template-body file://templates/app.yaml \
+              --parameters file://parameters/staging/app-parameters.json \
+              --capabilities CAPABILITY_NAMED_IAM
+            aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+            echo "Stack created successfully"
+          fi
+
+  deploy-db:
+    name: Deploy Database Layer
+    runs-on: ubuntu-latest
+    needs: deploy-app
+    environment: staging
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: GitHubActions-staging
+
+      - name: Set DB Stack Name
+        id: db-stack-names
+        run: |
+          PROJECT_NAME=$(jq -r '.[] | select(.ParameterKey=="ProjectName") | .ParameterValue' parameters/staging/db-parameters.json)
+          ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="Environment") | .ParameterValue' parameters/staging/db-parameters.json)
+          DB_STACK_NAME="${PROJECT_NAME}-${ENVIRONMENT}-db"
+          echo "db-stack-name=${DB_STACK_NAME}" >> $GITHUB_OUTPUT
+          
+      - name: Deploy Database Layer
+        run: |
+          STACK_NAME=${{ steps.db-stack-names.outputs.db-stack-name }}
+          
+          if aws cloudformation describe-stacks --stack-name $STACK_NAME >/dev/null 2>&1; then
+            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text)
+            echo "Stack exists with status: $STACK_STATUS"
+            
+            case $STACK_STATUS in
+              CREATE_IN_PROGRESS|UPDATE_IN_PROGRESS|DELETE_IN_PROGRESS)
+                echo "Stack is in transitional state: $STACK_STATUS. Waiting for completion..."
+                aws cloudformation wait stack-create-complete --stack-name $STACK_NAME 2>/dev/null || \
+                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME 2>/dev/null || \
+                aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME 2>/dev/null || true
+                STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DELETED")
+                ;;
+            esac
+            
+            if [ "$STACK_STATUS" = "CREATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_COMPLETE" ]; then
+              echo "Attempting to update stack..."
+              aws cloudformation update-stack \
+                --stack-name $STACK_NAME \
+                --template-body file://templates/db.yaml \
+                --parameters file://parameters/staging/db-parameters.json \
+                --capabilities CAPABILITY_NAMED_IAM 2>/dev/null && {
+                  echo "Update initiated, waiting for completion..."
+                  aws cloudformation wait stack-update-complete --stack-name $STACK_NAME
+                  echo "Stack updated successfully"
+                } || {
+                  echo "No changes detected, stack is up to date"
+                }
+            else
+              echo "Stack in unexpected state: $STACK_STATUS. Creating new stack..."
+              aws cloudformation create-stack \
+                --stack-name $STACK_NAME \
+                --template-body file://templates/db.yaml \
+                --parameters file://parameters/staging/db-parameters.json \
+                --capabilities CAPABILITY_NAMED_IAM
+              aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+              echo "Stack created successfully"
+            fi
+          else
+            echo "Creating new stack..."
+            aws cloudformation create-stack \
+              --stack-name $STACK_NAME \
+              --template-body file://templates/db.yaml \
+              --parameters file://parameters/staging/db-parameters.json \
+              --capabilities CAPABILITY_NAMED_IAM
+            aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+            echo "Stack created successfully"
+          fi

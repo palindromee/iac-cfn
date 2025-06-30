@@ -1,0 +1,200 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Stack for GitHub Actions OIDC and deployment role'
+
+# https://github.blog/changelog/2023-06-27-github-actions-update-on-oidc-integration-with-aws/
+
+Parameters:
+  GitHubOrgUser:
+    Description: Name of GitHub organization/user (case sensitive)
+    Type: String
+    AllowedPattern: '^[a-zA-Z0-9\-_.]+$'
+    ConstraintDescription: 'Must be a valid GitHub organization or username'
+    
+  RepositoryName:
+    Description: Name of GitHub repository (case sensitive)
+    Type: String
+    AllowedPattern: '^[a-zA-Z0-9\-_.]+$'
+    ConstraintDescription: 'Must be a valid GitHub repository name'
+    
+  OIDCAudience:
+    Description: Audience supplied to configure-aws-credentials.
+    Default: "sts.amazonaws.com"
+    Type: String
+
+  RoleName:
+    Type: String
+    Description: 'Name for the IAM role'
+    Default: 'GitHubActionsRole'
+    AllowedPattern: '^[a-zA-Z0-9+=,.@\-_]+$'
+    ConstraintDescription: 'Must be a valid IAM role name'
+
+
+Resources:
+  GithubOidc:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: 
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+      Tags:
+        - Key: 'Name'
+          Value: 'GitHub-Actions-OIDC-Provider'
+        - Key: 'ManagedBy'
+          Value: 'CloudFormation'
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithWebIdentity
+            Principal:
+              Federated: 
+                - !Ref GithubOidc
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: !Ref OIDCAudience
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrgUser}/${RepositoryName}:*
+      ManagedPolicyArns:
+        - !Ref InfrastructureDeploymentPolicy
+      Tags:
+        - Key: 'Name'
+          Value: !Ref RoleName
+        - Key: 'GitHubOrg'
+          Value: !Ref GitHubOrgUser
+        - Key: 'GitHubRepo'
+          Value: !Ref RepositoryName
+        - Key: 'ManagedBy'
+          Value: 'CloudFormation'
+
+  # Infrastructure Deployment Policy - permissions for infra deployment(scope for review)
+  InfrastructureDeploymentPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-InfrastructureDeployment'
+      Description: 'Infra deployment permissions for GitHub Actions (VPC, EC2, RDS, ALB, ASG, etc.)'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: 'CloudFormationFullAccess'
+            Effect: Allow
+            Action:
+              - 'cloudformation:*'
+            Resource: '*'
+          - Sid: 'EC2FullAccess'
+            Effect: Allow
+            Action:
+              - 'ec2:*'
+            Resource: '*'
+          - Sid: 'ELBFullAccess'
+            Effect: Allow
+            Action:
+              - 'elasticloadbalancing:*'
+            Resource: '*'
+          - Sid: 'AutoScalingFullAccess'
+            Effect: Allow
+            Action:
+              - 'autoscaling:*'
+            Resource: '*'
+          - Sid: 'RDSFullAccess'
+            Effect: Allow
+            Action:
+              - 'rds:*'
+            Resource: '*'
+          - Sid: 'CloudWatchFullAccess'
+            Effect: Allow
+            Action:
+              - 'cloudwatch:*'
+              - 'logs:*'
+            Resource: '*'
+          - Sid: 'IAMFullAccess'
+            Effect: Allow
+            Action:
+              - 'iam:*'
+            Resource: '*'
+          - Sid: 'KMSFullAccess'
+            Effect: Allow
+            Action:
+              - 'kms:*'
+            Resource: '*'
+          - Sid: 'Route53Access'
+            Effect: Allow
+            Action:
+              - 'route53:*'
+            Resource: '*'
+          - Sid: 'ACMAccess'
+            Effect: Allow
+            Action:
+              - 'acm:*'
+            Resource: '*'
+          - Sid: 'S3Access'
+            Effect: Allow
+            Action:
+              - 's3:*'
+            Resource: '*'
+          - Sid: 'VPCFlowLogsAccess'
+            Effect: Allow
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+              - 'logs:DescribeLogGroups'
+              - 'logs:DescribeLogStreams'
+              - 'logs:DescribeMetricFilters'
+              - 'logs:PutMetricFilter'
+              - 'logs:DeleteMetricFilter'
+            Resource: '*'
+          - Sid: 'SSMAccess'
+            Effect: Allow
+            Action:
+              - 'ssm:*'
+            Resource: '*'
+          - Sid: 'SecretsManagerAccess'
+            Effect: Allow
+            Action:
+              - 'secretsmanager:*'
+            Resource: '*'
+
+
+Outputs:
+  RoleArn:
+    Description: 'ARN of the created GitHub Actions role'
+    Value: !GetAtt Role.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-GitHubActionsRoleArn'
+
+  RoleName:
+    Description: 'Name of the created GitHub Actions role'
+    Value: !Ref Role
+    Export:
+      Name: !Sub '${AWS::StackName}-GitHubActionsRoleName'
+
+  OIDCProviderArn:
+    Description: 'ARN of the GitHub OIDC provider'
+    Value: !Ref GithubOidc
+    Export:
+      Name: !Sub '${AWS::StackName}-GitHubOIDCProviderArn'
+
+  GitHubWorkflowConfiguration:
+    Description: 'Configuration for GitHub Actions workflow'
+    Value: !Sub |
+      Configure your GitHub Actions workflow with:
+      - role-to-assume: ${Role.Arn}
+      - aws-region: ${AWS::Region}
+      - role-session-name: GitHubActions
+
+  SampleWorkflowStep:
+    Description: 'Sample GitHub Actions step configuration'
+    Value: !Sub |
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${Role.Arn}
+          aws-region: ${AWS::Region}
+          role-session-name: GitHubActions

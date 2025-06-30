@@ -1,0 +1,69 @@
+name: Lint & Scan stage
+
+on:
+  workflow_call:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'templates/**'
+      - 'parameters/**'
+      - '.github/workflows/**'
+
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  security-scan:
+    name: Lint & Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+# More here on cfn-lint: https://github.com/marketplace/actions/cfn-lint-action
+      - name: CloudFormation Lint
+        uses: scottbrenner/cfn-lint-action@v2
+        with:
+          file: templates/
+          args: --ignore-checks W3002,W3003
+
+# More here on Checkov: https://github.com/marketplace/actions/checkov-github-action
+      - name: Checkov Security Scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: templates/
+          framework: cloudformation
+          output_format: cli
+          output_file_path: console
+          quiet: true
+          soft_fail: false
+          skip_check: CKV_AWS_18,CKV_AWS_260,CKV_AWS_103,CKV_AWS_2,CKV_AWS_91,CKV_AWS_131
+
+# Custom company policies in .checkov/custom-policy.yaml
+      # - name: Custom Company Policy Check
+      #   uses: bridgecrewio/checkov-action@v12
+      #   with:
+      #     directory: templates/
+      #     framework: cloudformation
+      #     check: CKV2_SIMPLE_1
+      #     external_checks_dirs: .checkov/
+      #     output_format: cli
+      #     quiet: false
+      #     soft_fail: false
+
+
+      # - name: Secret Scanning
+      #   uses: gitleaks/gitleaks-action@v2
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # LICENSE is only for Orgs, couldn't fetch it
+
+# More here, https://github.com/marketplace/actions/trufflehog-oss
+      - name: TruffleHog Secret Scanning
+        uses: trufflesecurity/trufflehog@main
+        with:
+          base: ""
+          head: ${{ github.ref_name }}

@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "staging"
+  },
+  {
+    "ParameterKey": "ProjectName", 
+    "ParameterValue": "ndsm"
+  },
+  {
+    "ParameterKey": "DBInstanceType",
+    "ParameterValue": "db.t3.small"
+  },
+  {
+    "ParameterKey": "DBName",
+    "ParameterValue": "appdb"
+  },
+  {
+    "ParameterKey": "DBUsername",
+    "ParameterValue": "dbadmin"
+  },
+  {
+    "ParameterKey": "AllocatedStorage",
+    "ParameterValue": "50"
+  },
+  {
+    "ParameterKey": "BackupRetentionPeriod",
+    "ParameterValue": "14"
+  }
+]

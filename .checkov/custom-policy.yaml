@@ -1,0 +1,12 @@
+# Sample Checkov policy
+metadata:
+  name: "VPC must have Location tag"
+  id: "CKV2_SIMPLE_1"
+  category: "GENERAL_SECURITY"
+definition:
+  cond_type: "attribute"
+  resource_types:
+    - "AWS::EC2::VPC"
+  attribute: "Properties.Tags[].Key"
+  operator: "contains"
+  value: "Location"

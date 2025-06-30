@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "ndsm"
+  },
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "m5.large"
+  },
+  {
+    "ParameterKey": "KeyPairName",
+    "ParameterValue": "aws-demo"
+  },
+  {
+    "ParameterKey": "MinSize",
+    "ParameterValue": "3"
+  },
+  {
+    "ParameterKey": "MaxSize",
+    "ParameterValue": "10"
+  },
+  {
+    "ParameterKey": "DesiredCapacity",
+    "ParameterValue": "3"
+  }
+]
