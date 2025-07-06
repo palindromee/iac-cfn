@@ -1,0 +1,106 @@
+name: Deploy CloudFormation Stack
+description: Deploy or update a CloudFormation stack with proper error handling
+inputs:
+  stack-type:
+    description: 'Stack type (vpc, alb, app, db)'
+    required: true
+  template-path:
+    description: 'Path to CloudFormation template'
+    required: true
+  parameters-path:
+    description: 'Path to parameters file'
+    required: true
+  aws-role-arn:
+    description: 'AWS role ARN to assume'
+    required: true
+  aws-region:
+    description: 'AWS region'
+    required: false
+    default: 'us-east-1'
+  enable-termination-protection:
+    description: 'Enable termination protection for production stacks'
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup AWS Credentials
+      uses: ./.github/actions/setup-aws
+      with:
+        aws-role-arn: ${{ inputs.aws-role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Set Stack Name
+      id: stack-name
+      shell: bash
+      run: |
+        PROJECT_NAME=$(jq -r '.[] | select(.ParameterKey=="ProjectName") | .ParameterValue' ${{ inputs.parameters-path }})
+        ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="Environment") | .ParameterValue' ${{ inputs.parameters-path }})
+        STACK_NAME="${PROJECT_NAME}-${ENVIRONMENT}-${{ inputs.stack-type }}"
+        echo "stack-name=${STACK_NAME}" >> $GITHUB_OUTPUT
+        echo "Stack name: ${STACK_NAME}"
+
+    - name: Deploy ${{ inputs.stack-type }} Stack
+      shell: bash
+      run: |
+        STACK_NAME=${{ steps.stack-name.outputs.stack-name }}
+        
+        if aws cloudformation describe-stacks --stack-name $STACK_NAME >/dev/null 2>&1; then
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text)
+          echo "Stack exists with status: $STACK_STATUS"
+          
+          case $STACK_STATUS in
+            CREATE_IN_PROGRESS|UPDATE_IN_PROGRESS|DELETE_IN_PROGRESS)
+              echo "Stack is in transitional state: $STACK_STATUS. Waiting for completion..."
+              aws cloudformation wait stack-create-complete --stack-name $STACK_NAME 2>/dev/null || \
+              aws cloudformation wait stack-update-complete --stack-name $STACK_NAME 2>/dev/null || \
+              aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME 2>/dev/null || true
+              STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DELETED")
+              ;;
+          esac
+          
+          if [ "$STACK_STATUS" = "CREATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_COMPLETE" ]; then
+            echo "Attempting to update stack..."
+            aws cloudformation update-stack \
+              --stack-name $STACK_NAME \
+              --template-body file://${{ inputs.template-path }} \
+              --parameters file://${{ inputs.parameters-path }} \
+              --capabilities CAPABILITY_NAMED_IAM 2>/dev/null && {
+                echo "Update initiated, waiting for completion..."
+                aws cloudformation wait stack-update-complete --stack-name $STACK_NAME
+                echo "Stack updated successfully"
+              } || {
+                echo "No changes detected, stack is up to date"
+              }
+          else
+            echo "Stack in unexpected state: $STACK_STATUS. Creating new stack..."
+            aws cloudformation create-stack \
+              --stack-name $STACK_NAME \
+              --template-body file://${{ inputs.template-path }} \
+              --parameters file://${{ inputs.parameters-path }} \
+              --capabilities CAPABILITY_NAMED_IAM
+            aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+            echo "Stack created successfully"
+          fi
+        else
+          echo "Creating new stack..."
+          aws cloudformation create-stack \
+            --stack-name $STACK_NAME \
+            --template-body file://${{ inputs.template-path }} \
+            --parameters file://${{ inputs.parameters-path }} \
+            --capabilities CAPABILITY_NAMED_IAM
+          aws cloudformation wait stack-create-complete --stack-name $STACK_NAME
+          echo "Stack created successfully"
+        fi
+
+    - name: Enable Termination Protection
+      shell: bash
+      if: inputs.enable-termination-protection == 'true'
+      run: |
+        STACK_NAME=${{ steps.stack-name.outputs.stack-name }}
+        echo "Enabling termination protection for $STACK_NAME"
+        aws cloudformation update-termination-protection \
+          --stack-name $STACK_NAME \
+          --enable-termination-protection
+        echo "Termination protection enabled"

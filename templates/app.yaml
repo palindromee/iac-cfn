@@ -4,13 +4,32 @@ Description: 'Application Layer - EC2 instances in private subnets'
 Parameters:
   Environment:
     Type: String
-    Description: Environment name (dev/staging/prod)
+    Description: "Environment name for resource tagging and naming"
+    AllowedValues:
+      - prod
+      - stage
+      - dev
+      - test
     Default: dev
-    
+    ConstraintDescription: "Must be one of: prod, stage, dev, test"
+
   ProjectName:
     Type: String
-    Description: Project name for resource naming
-    Default: project
+    Description: "Project name for resource naming and tagging"
+    MinLength: 2
+    MaxLength: 20
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9-]*$'
+    ConstraintDescription: "Must start with letter, contain only alphanumeric and hyphens"
+
+  CostCenter:
+    Type: String
+    Description: "Cost center for billing and tracking"
+    Default: ""
+
+  Owner:
+    Type: String
+    Description: "Owner or team responsible for resources"
+    Default: ""
 
   InstanceType:
     Type: String
@@ -72,11 +91,23 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-app-role'
+          Value: !Sub '${Environment}-${ProjectName}-app-role'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   AppInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -111,11 +142,23 @@ Resources:
           Description: All outbound traffic
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-app-sg'
+          Value: !Sub '${Environment}-${ProjectName}-app-sg'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   AppLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -173,11 +216,23 @@ Resources:
           - ResourceType: instance
             Tags:
               - Key: Name
-                Value: !Sub '${ProjectName}-${Environment}-app'
+                Value: !Sub '${Environment}-${ProjectName}-app'
               - Key: Environment
                 Value: !Ref Environment
               - Key: Project
                 Value: !Ref ProjectName
+              - Key: ManagedBy
+                Value: CloudFormation
+              - !If
+                - HasCostCenter
+                - Key: CostCenter
+                  Value: !Ref CostCenter
+                - !Ref AWS::NoValue
+              - !If
+                - HasOwner
+                - Key: Owner
+                  Value: !Ref Owner
+                - !Ref AWS::NoValue
 
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -199,7 +254,7 @@ Resources:
       HealthCheckGracePeriod: 300
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-asg'
+          Value: !Sub '${Environment}-${ProjectName}-asg'
           PropagateAtLaunch: true
         - Key: Environment
           Value: !Ref Environment
@@ -207,6 +262,21 @@ Resources:
         - Key: Project
           Value: !Ref ProjectName
           PropagateAtLaunch: true
+        - Key: ManagedBy
+          Value: CloudFormation
+          PropagateAtLaunch: true
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+            PropagateAtLaunch: true
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+            PropagateAtLaunch: true
+          - !Ref AWS::NoValue
 
   ScaleUpPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
@@ -268,6 +338,8 @@ Resources:
 Conditions:
   HasKeyPair: !Not [!Equals [!Ref KeyPairName, ""]]
   IsProd: !Equals [!Ref Environment, 'prod']
+  HasCostCenter: !Not [!Equals [!Ref CostCenter, '']]
+  HasOwner: !Not [!Equals [!Ref Owner, '']]
 
 Outputs:
   AppSecurityGroupId:

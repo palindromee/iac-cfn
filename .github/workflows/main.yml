@@ -8,20 +8,19 @@ on:
       - 'templates/**'
       - 'parameters/**'
       - '.github/workflows/**'
-  workflow_dispatch:
+  workflow_dispatch: # Facilitates Manual trigger in UI for emergency deployments/testing purpose
 
 permissions:
   id-token: write
   contents: read
-  security-events: write
 
 jobs:
   lint-and-scan:
     name: Lint & Scan
     uses: ./.github/workflows/lint-and-scan.yml
     permissions:
-      contents: read
       security-events: write
+      contents: read #  When job-level permission is mentioned, it overrides the top-level permissions completely, hence adding this again
 
   deploy-dev:
     name: Deploy to Dev

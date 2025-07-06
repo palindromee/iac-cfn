@@ -26,5 +26,13 @@
   {
     "ParameterKey": "DesiredCapacity",
     "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "CostCenter",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "Owner",
+    "ParameterValue": ""
   }
 ]

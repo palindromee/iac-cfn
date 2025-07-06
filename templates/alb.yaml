@@ -4,15 +4,36 @@ Description: 'Application Load Balancer in Public Subnets'
 Parameters:
   Environment:
     Type: String
-    Description: Environment name (dev/staging/prod)
+    Description: "Environment name for resource tagging and naming"
+    AllowedValues:
+      - prod
+      - stage
+      - dev
+      - test
     Default: dev
-    
+    ConstraintDescription: "Must be one of: prod, stage, dev, test"
+
   ProjectName:
     Type: String
-    Description: Project name for resource naming
-    Default: project
-    
+    Description: "Project name for resource naming and tagging"
+    MinLength: 2
+    MaxLength: 20
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9-]*$'
+    ConstraintDescription: "Must start with letter, contain only alphanumeric and hyphens"
 
+  CostCenter:
+    Type: String
+    Description: "Cost center for billing and tracking"
+    Default: ""
+
+  Owner:
+    Type: String
+    Description: "Owner or team responsible for resources"
+    Default: ""
+
+Conditions:
+  HasCostCenter: !Not [!Equals [!Ref CostCenter, '']]
+  HasOwner: !Not [!Equals [!Ref Owner, '']]
 
 Resources:
   ALBSecurityGroup:
@@ -34,11 +55,23 @@ Resources:
           Description: HTTPS traffic
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-alb-sg'
+          Value: !Sub '${Environment}-${ProjectName}-alb-sg'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -54,11 +87,23 @@ Resources:
         - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-vpc-Public-Subnet-2-ID'
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-alb'
+          Value: !Sub '${Environment}-${ProjectName}-alb'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   ALBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -76,11 +121,23 @@ Resources:
       UnhealthyThresholdCount: 3
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-tg'
+          Value: !Sub '${Environment}-${ProjectName}-tg'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   ALBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener

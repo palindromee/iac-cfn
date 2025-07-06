@@ -26,5 +26,13 @@
   {
     "ParameterKey": "BackupRetentionPeriod",
     "ParameterValue": "30"
+  },
+  {
+    "ParameterKey": "CostCenter",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "Owner",
+    "ParameterValue": ""
   }
 ]

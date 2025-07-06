@@ -4,13 +4,32 @@ Description: 'Database Layer in DB Subnets'
 Parameters:
   Environment:
     Type: String
-    Description: Environment name (dev/staging/prod)
+    Description: "Environment name for resource tagging and naming"
+    AllowedValues:
+      - prod
+      - stage
+      - dev
+      - test
     Default: dev
-    
+    ConstraintDescription: "Must be one of: prod, stage, dev, test"
+
   ProjectName:
     Type: String
-    Description: Project name for resource naming
-    Default: project
+    Description: "Project name for resource naming and tagging"
+    MinLength: 2
+    MaxLength: 20
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9-]*$'
+    ConstraintDescription: "Must start with letter, contain only alphanumeric and hyphens"
+
+  CostCenter:
+    Type: String
+    Description: "Cost center for billing and tracking"
+    Default: ""
+
+  Owner:
+    Type: String
+    Description: "Owner or team responsible for resources"
+    Default: ""
 
   DBInstanceType:
     Type: String
@@ -66,6 +85,8 @@ Parameters:
 Conditions:
   IsProd: !Equals [!Ref Environment, 'prod']
   IsMultiAZ: !Or [!Equals [!Ref Environment, 'prod'], !Equals [!Ref Environment, 'staging']]
+  HasCostCenter: !Not [!Equals [!Ref CostCenter, '']]
+  HasOwner: !Not [!Equals [!Ref Owner, '']]
 
 Resources:
   DBKMSKey:
@@ -92,11 +113,23 @@ Resources:
             Resource: '*'
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db-key'
+          Value: !Sub '${Environment}-${ProjectName}-db-key'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   DBKMSKeyAlias:
     Type: AWS::KMS::Alias
@@ -115,11 +148,23 @@ Resources:
         - Fn::ImportValue: !Sub '${ProjectName}-${Environment}-vpc-Private-Subnet-2-ID'
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db-subnet-group'
+          Value: !Sub '${Environment}-${ProjectName}-db-subnet-group'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -138,11 +183,23 @@ Resources:
       SecurityGroupEgress: []
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db-sg'
+          Value: !Sub '${Environment}-${ProjectName}-db-sg'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   RDSEnhancedMonitoringRole:
     Type: AWS::IAM::Role
@@ -159,11 +216,23 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-rds-monitoring-role'
+          Value: !Sub '${Environment}-${ProjectName}-rds-monitoring-role'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   DBParameterGroup:
     Type: AWS::RDS::DBParameterGroup
@@ -180,11 +249,23 @@ Resources:
         rds.force_ssl: 1
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-postgres-params'
+          Value: !Sub '${Environment}-${ProjectName}-postgres-params'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   DBInstance:
     Type: AWS::RDS::DBInstance
@@ -222,11 +303,23 @@ Resources:
       AssociatedRoles: []
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-db'
+          Value: !Sub '${Environment}-${ProjectName}-db'
         - Key: Environment
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: CloudFormation
+        - !If
+          - HasCostCenter
+          - Key: CostCenter
+            Value: !Ref CostCenter
+          - !Ref AWS::NoValue
+        - !If
+          - HasOwner
+          - Key: Owner
+            Value: !Ref Owner
+          - !Ref AWS::NoValue
 
   DBCPUAlarm:
     Type: AWS::CloudWatch::Alarm
